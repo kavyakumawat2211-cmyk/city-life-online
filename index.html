@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#101a24">
+<title>City Life Online</title>
+<style>
+:root{color-scheme:dark;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#101a24;color:#fff;touch-action:none}
+#game{position:fixed;inset:0}canvas{display:block;width:100%;height:100%}
+#hud{position:fixed;inset:0;pointer-events:none}
+.panel{background:rgba(8,15,22,.72);border:1px solid rgba(255,255,255,.14);backdrop-filter:blur(10px);border-radius:14px;box-shadow:0 8px 30px #0003}
+#brand{position:absolute;top:calc(env(safe-area-inset-top) + 12px);left:12px;padding:10px 13px;max-width:70vw}
+#brand b{display:block;font-size:14px;letter-spacing:.12em}#brand span{font-size:11px;color:#a8bdc9}
+#status{position:absolute;top:calc(env(safe-area-inset-top) + 12px);right:12px;padding:9px 12px;font-size:12px;text-align:right}
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#f59e0b;margin-right:5px}
+#notice{position:absolute;top:95px;left:50%;transform:translateX(-50%);padding:8px 12px;font-size:12px;color:#d9e6ee;white-space:nowrap;max-width:90vw;overflow:hidden;text-overflow:ellipsis}
+#identity{position:absolute;left:12px;bottom:calc(env(safe-area-inset-bottom) + 14px);padding:10px 12px;font-size:12px}
+#controls{position:absolute;inset:0;pointer-events:none}
+#stickArea{position:absolute;left:18px;bottom:calc(env(safe-area-inset-bottom) + 22px);width:132px;height:132px;border-radius:50%;background:#ffffff12;border:1px solid #ffffff33;pointer-events:auto;touch-action:none}
+#stick{position:absolute;width:54px;height:54px;left:39px;top:39px;border-radius:50%;background:#dcecfb55;border:1px solid #ffffff66;box-shadow:0 3px 14px #0004}
+.action{position:absolute;right:18px;width:68px;height:68px;border-radius:50%;display:flex;align-items:center;justify-content:center;text-align:center;font-size:11px;font-weight:800;letter-spacing:.04em;background:#172b3dcc;border:1px solid #ffffff55;pointer-events:auto;touch-action:none;user-select:none}
+#driveBtn{bottom:calc(env(safe-area-inset-bottom) + 28px)}#enterBtn{bottom:calc(env(safe-area-inset-bottom) + 108px);width:60px;height:60px;right:22px}
+#jumpBtn{bottom:calc(env(safe-area-inset-bottom) + 186px);width:54px;height:54px;right:25px}
+#help{position:absolute;right:12px;bottom:calc(env(safe-area-inset-bottom) + 14px);padding:8px 10px;font-size:10px;color:#c5d5df}
+#nameModal{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:24px;background:#071018aa;z-index:5}
+#nameCard{width:min(360px,100%);padding:22px}
+#nameCard h1{margin:0 0 8px;font-size:22px}#nameCard p{margin:0 0 18px;color:#afc0cb;font-size:13px;line-height:1.5}
+input,button{font:inherit}input{width:100%;padding:13px;border-radius:10px;border:1px solid #425767;background:#0e1a23;color:#fff;margin-bottom:10px;outline:none}
+button{border:0;border-radius:10px;background:#38bdf8;color:#071018;font-weight:800;padding:13px;width:100%}
+.small{font-size:11px;color:#8fa5b4;margin-top:12px;line-height:1.5}
+@media(min-width:800px){#stickArea{width:150px;height:150px}#stick{left:47px;top:47px}}
+</style>
+</head>
+<body>
+<div id="game"></div>
+<div id="hud">
+  <div id="brand" class="panel"><b>CITY LIFE ONLINE</b><span>OPEN-WORLD ROLEPLAY · ALPHA</span></div>
+  <div id="status" class="panel"><span class="dot" id="netDot"></span><span id="netText">Connecting…</span><br><span id="playerCount">1 player</span></div>
+  <div id="notice" class="panel">Explore the city · Walk or enter a vehicle</div>
+  <div id="identity" class="panel">👤 <span id="myName">Guest</span> &nbsp;|&nbsp; <span id="modeText">On foot</span></div>
+  <div id="controls">
+    <div id="stickArea"><div id="stick"></div></div>
+    <div id="jumpBtn" class="action">JUMP</div>
+    <div id="enterBtn" class="action">ENTER<br>CAR</div>
+    <div id="driveBtn" class="action">DRIVE</div>
+    <div id="help" class="panel">Desktop: WASD / arrows · E enter car</div>
+  </div>
+</div>
+<div id="nameModal">
+  <div id="nameCard" class="panel">
+    <h1>Welcome to the city</h1>
+    <p>Choose a player name and join the shared prototype city. Everyone connected to the same deployed server can see each other.</p>
+    <input id="nameInput" maxlength="16" placeholder="Your player name" value="CityPlayer">
+    <button id="joinBtn">JOIN CITY</button>
+    <div class="small">Early multiplayer prototype. Keep this page open while playing. A hosted server is required for players on different devices to meet.</div>
+  </div>
+</div>
+<script src="/socket.io/socket.io.js"></script>
+<script type="module">
+import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js";
+
+const game = document.querySelector("#game");
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x9bb8c8);
+scene.fog = new THREE.Fog(0x9bb8c8, 90, 320);
+const camera = new THREE.PerspectiveCamera(62, innerWidth/innerHeight, .1, 500);
+camera.position.set(0,7,12);
+const renderer = new THREE.WebGLRenderer({antialias:true, powerPreference:"high-performance"});
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.7));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+game.appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0xe3f2ff,0x58616a,2.0));
+const sun = new THREE.DirectionalLight(0xffe3bd,3.0);
+sun.position.set(-55,95,40); sun.castShadow=true;
+sun.shadow.mapSize.set(1024,1024); sun.shadow.camera.left=-100;sun.shadow.camera.right=100;sun.shadow.camera.top=100;sun.shadow.camera.bottom=-100;
+scene.add(sun);
+
+const mat=(color,roughness=.8,metalness=0)=>new THREE.MeshStandardMaterial({color,roughness,metalness});
+const asphalt=mat(0x252c32), sidewalk=mat(0x777e83), lineMat=mat(0xf5e6b5), glass=mat(0x243d50,.22,.55);
+const buildingMats=[0x8c9aa3,0xb9b4a8,0x626f7c,0xc7c2b7,0x52636d,0x9caaad].map(c=>mat(c,.7,.12));
+const boxGeo=new THREE.BoxGeometry(1,1,1);
+function box(parent, name, pos, scale, material, cast=true, receive=true){
+ const m=new THREE.Mesh(boxGeo,material);m.name=name;m.position.set(...pos);m.scale.set(...scale);m.castShadow=cast;m.receiveShadow=receive;parent.add(m);return m;
+}
+box(scene,"ground",[0,-.35,0],[420,.5,420],mat(0x65786d),false,true);
+// road grid
+for(let i=-3;i<=3;i++){
+ const p=i*42;
+ box(scene,"road-x",[0,-.06,p],[420,.18,12],asphalt,false,true);
+ box(scene,"road-z",[p,-.05,0],[12,.2,420],asphalt,false,true);
+ for(let k=-9;k<=9;k++){
+   box(scene,"lane-mark-x",[k*22,.04,p],[7,.025,.18],lineMat,false,false);
+   box(scene,"lane-mark-z",[p,.045,k*22],[.18,.025,7],lineMat,false,false);
+ }
+}
+// sidewalks and city blocks
+for(let gx=-3;gx<=3;gx++) for(let gz=-3;gz<=3;gz++){
+ if(Math.abs(gx)>2 || Math.abs(gz)>2) continue;
+ const cx=gx*42+21, cz=gz*42+21;
+ box(scene,"plaza",[cx,-.05,cz],[27,.3,27],sidewalk,false,true);
+ const count=2+Math.floor(Math.random()*3);
+ for(let n=0;n<count;n++){
+  const w=5+Math.random()*8, d=5+Math.random()*8, h=9+Math.random()*Math.random()*52;
+  const x=cx+(Math.random()-.5)*19, z=cz+(Math.random()-.5)*19;
+  const b=box(scene,"building",[x,h/2,z],[w,h,d],buildingMats[Math.floor(Math.random()*buildingMats.length)]);
+  // facade window bands
+  const rows=Math.min(12,Math.floor(h/3));
+  for(let r=1;r<rows;r++){
+   for(let side of [-1,1]){
+    const win=box(scene,"window",[x+side*(w/2+.012),r*3,z],[.035,1.25,d*.66],glass,false,false);
+   }
+  }
+  // rooftop utility
+  if(h>25) box(scene,"roof-unit",[x,h+0.6,z],[w*.3,1.2,d*.3],mat(0x46515a),false,false);
+ }
+}
+// trees and streetlights
+const trunkMat=mat(0x5a4230), leafMat=mat(0x2d654b);
+const trunkGeo=new THREE.CylinderGeometry(.18,.28,2.4,7), crownGeo=new THREE.SphereGeometry(1.25,8,7);
+for(let x=-150;x<=150;x+=42) for(let z=-150;z<=150;z+=42){
+ if(Math.random()>.62) continue;
+ for(const [dx,dz] of [[-8,-8],[8,8]]){
+  const t=new THREE.Mesh(trunkGeo,trunkMat);t.position.set(x+dx,1,z+dz);t.castShadow=true;scene.add(t);
+  const c=new THREE.Mesh(crownGeo,leafMat);c.position.set(x+dx,3,z+dz);c.scale.y=1.15;c.castShadow=true;scene.add(c);
+ }
+}
+const lampMat=mat(0x303a40,.45,.6), bulbMat=new THREE.MeshBasicMaterial({color:0xffe9b0});
+for(let i=-4;i<=4;i++) for(let j=-4;j<=4;j++){
+ const x=i*42+8,z=j*42+8;
+ const pole=box(scene,"streetlight",[x,3.2,z],[.14,6.4,.14],lampMat);
+ box(scene,"lamp-arm",[x+.7,6.1,z],[1.4,.12,.12],lampMat);
+ const bulb=box(scene,"lamp",[x+1.3,6.05,z],[.35,.18,.35],bulbMat,false,false);
+}
+
+// simple player models
+const players = new Map();
+function makeCharacter(color=0x3b82f6){
+ const g=new THREE.Group();
+ const shirt=mat(color,.55), pants=mat(0x253141,.8), skin=mat(0xc98f69,.8), shoe=mat(0x111820,.8);
+ box(g,"torso",[0,1.35,0],[.62,.78,.32],shirt);
+ const head=new THREE.Mesh(new THREE.SphereGeometry(.22,12,10),skin);head.position.y=1.95;head.castShadow=true;g.add(head);
+ for(const s of [-1,1]){
+  box(g,"leg",[s*.17,.55,0],[.2,.75,.22],pants);
+  box(g,"shoe",[s*.17,.13,.06],[.22,.16,.36],shoe);
+  box(g,"arm",[s*.42,1.36,0],[.18,.68,.18],shirt);
+ }
+ return g;
+}
+function makeCar(color=0x1976d2){
+ const g=new THREE.Group();
+ const body=mat(color,.27,.62), tire=mat(0x111418,.85), rim=mat(0xb9c3cb,.25,.8);
+ box(g,"car-body",[0,.62,0],[2.25,.62,4.2],body);
+ box(g,"car-cabin",[0,1.13,-.25],[1.65,.72,2.05],glass);
+ box(g,"hood",[0,.83,1.25],[1.95,.22,1.25],body);
+ box(g,"front-bumper",[0,.42,2.12],[2.1,.18,.15],mat(0x20262a,.4,.4));
+ for(const x of [-1,1]) for(const z of [-1.35,1.35]){
+  const wheel=new THREE.Mesh(new THREE.CylinderGeometry(.38,.38,.22,14),tire);wheel.rotation.z=Math.PI/2;wheel.position.set(x*1.08,.38,z);wheel.castShadow=true;g.add(wheel);
+  const hub=new THREE.Mesh(new THREE.CylinderGeometry(.18,.18,.235,12),rim);hub.rotation.z=Math.PI/2;hub.position.copy(wheel.position);g.add(hub);
+ }
+ const light=mat(0xfff0bd,.25,.1), rear=mat(0xf21f36,.3,.1);
+ for(const x of [-.72,.72]){box(g,"headlight",[x,.68,2.12],[.42,.22,.035],light,false,false);box(g,"taillight",[x,.68,-2.12],[.38,.2,.035],rear,false,false)}
+ return g;
+}
+const myId=null;
+let socket=null, localId=null, myPlayer=null, driving=false, myCar=null, speed=0, rotation=0;
+const remoteData=new Map();
+const keys={};
+let stick={x:0,y:0,active:false}, stickPointer=null;
+function createLocal(id,name,color,x,z){
+ const avatar=makeCharacter(color);avatar.position.set(x,0,z);scene.add(avatar);
+ const car=makeCar(0x1689d4);car.position.set(x+4,0,z+2);scene.add(car);
+ return {id,name,color,x,z,rotation:0,avatar,car,driving:false};
+}
+function addRemote(p){
+ if(p.id===localId)return;
+ if(players.has(p.id)){updateRemote(p);return;}
+ const c=createLocal(p.id,p.name,p.color||"#e879f9",p.x||0,p.z||0);
+ c.avatar.traverse(o=>{if(o.material&&o.material.color)o.material.color.set(p.color||"#e879f9")});
+ c.car.visible=false;
+ c.rotation=p.rotation||0;c.driving=!!p.driving;
+ players.set(p.id,c);
+}
+function updateRemote(p){
+ const c=players.get(p.id);if(!c)return;
+ c.name=p.name;c.x=p.x;c.z=p.z;c.rotation=p.rotation;c.driving=p.driving;
+}
+function removeRemote(id){const c=players.get(id);if(!c)return;scene.remove(c.avatar,c.car);players.delete(id)}
+function syncRemote(c,dt){
+ const target=new THREE.Vector3(c.x,0,c.z);
+ const obj=c.driving?c.car:c.avatar;
+ obj.position.lerp(target,Math.min(1,dt*9));obj.rotation.y=c.rotation;
+ c.avatar.visible=!c.driving;c.car.visible=!!c.driving;
+}
+function showNotice(t){const n=document.querySelector("#notice");n.textContent=t;n.style.opacity=1;clearTimeout(showNotice.timer);showNotice.timer=setTimeout(()=>n.style.opacity=.6,2600)}
+function connect(name){
+ socket=io({transports:["websocket","polling"]});
+ socket.on("connect",()=>{document.querySelector("#netDot").style.background="#22c55e";document.querySelector("#netText").textContent="Online";socket.emit("setName",name)});
+ socket.on("connect_error",()=>{document.querySelector("#netDot").style.background="#ef4444";document.querySelector("#netText").textContent="Server unavailable"});
+ socket.on("welcome",data=>{
+  localId=data.id;
+  const palette=["#3b82f6","#f97316","#22c55e","#e879f9","#facc15"];
+  myPlayer=createLocal(localId,name,palette[Math.floor(Math.random()*palette.length)],0,0);
+  myPlayer.car.position.set(5,0,4);
+  myCar=myPlayer.car;
+  document.querySelector("#myName").textContent=name;
+  data.players.forEach(addRemote);
+  updateCount();
+ });
+ socket.on("playerJoined",p=>{addRemote(p);updateCount();showNotice(`${p.name} joined the city`)});
+ socket.on("playerMoved",updateRemote);
+ socket.on("playerUpdated",p=>{updateRemote(p);if(p.id!==localId)showNotice(`${p.name} is in the city`)});
+ socket.on("playerLeft",id=>{removeRemote(id);updateCount()});
+}
+function updateCount(){document.querySelector("#playerCount").textContent=(players.size+1)+" player"+(players.size===0?"":"s")}
+document.querySelector("#joinBtn").addEventListener("click",()=>{
+ const name=document.querySelector("#nameInput").value.trim().slice(0,16)||"CityPlayer";
+ document.querySelector("#nameModal").style.display="none";connect(name);
+});
+document.querySelector("#nameInput").addEventListener("keydown",e=>{if(e.key==="Enter")document.querySelector("#joinBtn").click()});
+addEventListener("keydown",e=>{keys[e.key.toLowerCase()]=true;if(e.key.toLowerCase()==="e")toggleCar();if(e.key===" ")jump()});
+addEventListener("keyup",e=>keys[e.key.toLowerCase()]=false);
+function toggleCar(){
+ if(!myPlayer)return;
+ if(!driving){
+  const d=myPlayer.avatar.position.distanceTo(myPlayer.car.position);
+  if(d<8){driving=true;myPlayer.driving=true;myPlayer.avatar.visible=false;myPlayer.car.visible=true;showNotice("You entered your vehicle")}
+  else showNotice("Move closer to your car to enter");
+ }else{driving=false;myPlayer.driving=false;myPlayer.avatar.visible=true;myPlayer.car.visible=false;myPlayer.avatar.position.x=myPlayer.car.position.x+2.4;myPlayer.avatar.position.z=myPlayer.car.position.z;showNotice("You left your vehicle")}
+ document.querySelector("#modeText").textContent=driving?"Driving":"On foot";
+}
+document.querySelector("#enterBtn").addEventListener("pointerdown",e=>{e.preventDefault();toggleCar()});
+document.querySelector("#driveBtn").addEventListener("pointerdown",e=>{e.preventDefault();if(!driving){toggleCar()}else speed=speed===0?1:0});
+document.querySelector("#jumpBtn").addEventListener("pointerdown",e=>{e.preventDefault();jump()});
+let jumpY=0,jumpV=0;
+function jump(){if(!driving&&jumpY<=0.001)jumpV=5.4}
+const stickArea=document.querySelector("#stickArea"), stickEl=document.querySelector("#stick");
+stickArea.addEventListener("pointerdown",e=>{stickPointer=e.pointerId;stick.active=true;stickArea.setPointerCapture(e.pointerId);moveStick(e)});
+stickArea.addEventListener("pointermove",e=>{if(stick.active&&e.pointerId===stickPointer)moveStick(e)});
+function moveStick(e){const r=stickArea.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2;let dx=e.clientX-cx,dy=e.clientY-cy;const max=42,l=Math.hypot(dx,dy)||1;if(l>max){dx=dx/l*max;dy=dy/l*max}stick.x=dx/max;stick.y=dy/max;stickEl.style.transform=`translate(${dx}px,${dy}px)`}
+function endStick(e){if(e.pointerId!==stickPointer)return;stick.active=false;stick.x=stick.y=0;stickPointer=null;stickEl.style.transform="translate(0,0)"}
+stickArea.addEventListener("pointerup",endStick);stickArea.addEventListener("pointercancel",endStick);
+let last=performance.now(),sendTimer=0;
+function animate(now){
+ requestAnimationFrame(animate);const dt=Math.min(.04,(now-last)/1000);last=now;
+ if(myPlayer){
+  let f=(keys.w||keys.arrowup?1:0)-(keys.s||keys.arrowdown?1:0)-stick.y;
+  let turn=(keys.d||keys.arrowright?1:0)-(keys.a||keys.arrowleft?1:0)+stick.x;
+  const moving=Math.abs(f)>.04||Math.abs(turn)>.04;
+  const obj=driving?myPlayer.car:myPlayer.avatar;
+  if(driving){
+   speed+=(f*18-speed*1.7)*dt;speed=THREE.MathUtils.clamp(speed,-8,22);
+   rotation+=turn*dt*(speed>=0?1:-1)*1.65;
+   obj.rotation.y=rotation;
+   obj.position.x+=Math.sin(rotation)*speed*dt;
+   obj.position.z+=Math.cos(rotation)*speed*dt;
+  }else{
+   const sp=4.4;
+   if(moving){rotation=Math.atan2(turn,-f);obj.rotation.y=rotation;obj.position.x+=Math.sin(rotation)*sp*dt;obj.position.z+=Math.cos(rotation)*sp*dt}
+   jumpV-=14*dt;jumpY=Math.max(0,jumpY+jumpV*dt);if(jumpY===0)jumpV=0;obj.position.y=jumpY;
+  }
+  // Camera follows the current controlled object
+  const forward=new THREE.Vector3(Math.sin(rotation),0,Math.cos(rotation));
+  const target=obj.position.clone().add(new THREE.Vector3(0,2.2,0));
+  const desired=target.clone().add(forward.clone().multiplyScalar(-8)).add(new THREE.Vector3(0,4.2,0));
+  camera.position.lerp(desired,1-Math.exp(-dt*4.5));camera.lookAt(target.clone().add(forward.clone().multiplyScalar(2)));
+  sendTimer+=dt;
+  if(socket&&socket.connected&&sendTimer>.06){sendTimer=0;socket.emit("move",{x:obj.position.x,z:obj.position.z,rotation,driving})}
+ }
+ for(const c of players.values())syncRemote(c,dt);
+ renderer.render(scene,camera);
+}
+requestAnimationFrame(animate);
+addEventListener("resize",()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,1.7))});
+</script>
+</body>
+</html>
